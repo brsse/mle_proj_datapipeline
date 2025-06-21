@@ -1,5 +1,8 @@
-# last updated Mar 25 2025, 11:00am
-FROM python:3.12-slim
+# Use the official Apache Airflow image (adjust the version as needed)
+FROM apache/airflow:2.8.1
+
+# Switch to root to install additional packages
+USER root
 
 # Set non-interactive mode for apt-get
 ENV DEBIAN_FRONTEND=noninteractive
@@ -8,8 +11,15 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && \
     apt-get install -y --no-install-recommends openjdk-17-jdk-headless procps bash && \
     rm -rf /var/lib/apt/lists/* && \
-    # Ensure Spark’s scripts run with bash instead of dash
-    ln -sf /bin/bash /bin/sh
+    # Ensure Spark's scripts run with bash instead of dash
+    ln -sf /bin/bash /bin/sh && \
+    # Create expected JAVA_HOME directory and symlink the java binary there
+    mkdir -p /usr/lib/jvm/java-17-openjdk-amd64/bin && \
+    JAVA_PATH="$(which java)" && \
+    if [ ! -e /usr/lib/jvm/java-17-openjdk-amd64/bin/java ]; then \
+        ln -s "$JAVA_PATH" /usr/lib/jvm/java-17-openjdk-amd64/bin/java; \
+    fi
+    # ln -s "$(which java)" /usr/lib/jvm/java-17-openjdk-amd64/bin/java
 
 # Set JAVA_HOME to the directory expected by Spark
 ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
@@ -21,19 +31,11 @@ WORKDIR /app
 # Copy the requirements file into the container
 COPY requirements.txt ./
 
-# Install Python dependencies (ensure that pyspark is in your requirements.txt,
-# or you can install it explicitly by uncommenting the next line)
-RUN pip install --no-cache-dir -r requirements.txt
-# RUN pip install pyspark
+# Switch to the airflow user before installing Python dependencies
+USER airflow
 
-# Expose the default JupyterLab port
-EXPOSE 8888
+# Install Python dependencies using requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Create a volume mount point for notebooks
 VOLUME /app
-
-# Enable JupyterLab via environment variable
-ENV JUPYTER_ENABLE_LAB=yes
-
-# Set up the command to run JupyterLab
-CMD ["jupyter", "lab", "--ip=0.0.0.0", "--port=8888", "--no-browser", "--allow-root", "--notebook-dir=/app"]
