@@ -2,6 +2,8 @@ import logging
 import re
 from pathlib import Path
 from typing import List, Optional
+from datetime import datetime
+import os
 
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
@@ -13,16 +15,16 @@ from pyspark.ml import Pipeline
 from pyspark.ml.feature import StringIndexer, OneHotEncoder
 
 
-def load_category_by_date(base_path, data_window, spark):
-    path = Path(base_path)
-    pattern = re.compile(r".*_(\d{4}-\d{2}-\d{2})")
-    folders = [f for f in path.iterdir() if f.is_dir() and pattern.match(f.name)]
-    if data_window:
-        date_strs = [d if isinstance(d, str) else d.strftime("%Y-%m-%d") for d in data_window]
-        folders = [f for f in folders if pattern.match(f.name).group(1) in date_strs]
-    if not folders:
-        return None
-    return spark.read.parquet(*[str(f) for f in folders])
+# def load_category_by_date(base_path, data_window, spark):
+#     path = Path(base_path)
+#     pattern = re.compile(r".*_(\d{4}-\d{2}-\d{2})")
+#     folders = [f for f in path.iterdir() if f.is_dir() and pattern.match(f.name)]
+#     if data_window:
+#         date_strs = [d if isinstance(d, str) else d.strftime("%Y-%m-%d") for d in data_window]
+#         folders = [f for f in folders if pattern.match(f.name).group(1) in date_strs]
+#     if not folders:
+#         return None
+#     return spark.read.parquet(*[str(f) for f in folders])
 
 # type conversion
 def enforce_schema(df, schema_dict):
@@ -285,30 +287,25 @@ def loan_terms_processing(df, spark):
 def create_feature_store(
     silver_root: str,
     output_path: str,
-    data_window: Optional[List[str]] = None,
-    categorical_cols=None,
-    numeric_cols=None
+    snapshot_date_str: str
 ):
     spark = SparkSession.builder.appName("FeatureStoreCreation").getOrCreate()
 
-    Path("logs").mkdir(exist_ok=True)
+    Path("/opt/airflow/logs").mkdir(exist_ok=True)
     logging.basicConfig(
-        filename="logs/gold_feature_store.log",
+        filename="/opt/airflow/logs/gold_feature_store.log",
         level=logging.INFO,
         format="%(asctime)s - %(levelname)s - %(message)s",
         force=True
     )
-    
-    # === Dates ===
-    if data_window:
-        date_list = [d.strftime("%Y-%m-%d") if not isinstance(d, str) else d for d in data_window]
-    
+    snapshot_date = datetime.strptime(snapshot_date_str, "%Y-%m-%d")
+    date_str = snapshot_date.strftime('%Y_%m_%d')
     # === Load Each Feature Category ===
     logging.info("Loading silver-level parquet folders")
-    loan_df        = load_category_by_date(f"{silver_root}/loan_terms", date_list, spark)
-    demo_df        = load_category_by_date(f"{silver_root}/demographic", date_list, spark)
-    fin_df         = load_category_by_date(f"{silver_root}/financial", date_list, spark)
-    credit_df      = load_category_by_date(f"{silver_root}/credit_history", date_list, spark)
+    loan_df        = spark.read.parquet(f"{silver_root}/loan_terms/silver_loan_terms_week_{date_str}")
+    demo_df        = spark.read.parquet(f"{silver_root}/demographic/silver_demographic_week_{date_str}")
+    fin_df         = spark.read.parquet(f"{silver_root}/financial/silver_financial_week_{date_str}")
+    credit_df      = spark.read.parquet(f"{silver_root}/credit_history/silver_credit_history_week_{date_str}")
 
     if not all([loan_df, demo_df, fin_df, credit_df]):
         logging.warning("One or more silver categories could not be loaded.")
@@ -329,12 +326,19 @@ def create_feature_store(
     df = df.drop("member_id", "snapshot_date")
     print(df.columns)
     
-    # === Write Label Store to Parquet ===
-    output_path = f"{output_path}/feature_store"
+    # === Write Feature Store to Parquet ===
+    # Create output directory
+    gold_table_dir = os.path.join(output_path, "feature_store")
+    os.makedirs(gold_table_dir, exist_ok=True)
+    
+    # Write processed data to gold layer
+    partition_name = f"feature_store_week_{date_str}"
+    output_path = os.path.join(gold_table_dir, partition_name)
+    
     logging.info(f"Writing gold feature store to: {output_path}")
-    df.write.mode("overwrite").parquet(str(output_path))
+    df.write.mode("overwrite").parquet(output_path)
 
-    logging.info("Gold label store created successfully.")
-    print(f"Gold label store written to: {output_path}")
+    logging.info("Gold feature store created successfully.")
+    print(f"Gold feature store written to: {output_path}")
 
     

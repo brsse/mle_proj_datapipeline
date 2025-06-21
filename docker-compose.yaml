@@ -8,7 +8,6 @@ services:
       - POSTGRES_DB=airflow
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
     ports:
       - "5432:5432"
     healthcheck:
@@ -42,6 +41,7 @@ services:
       - "5000:5000"
     command: >
       bash -c "pip install mlflow psycopg2-binary &&
+      psql -h postgres -U airflow -d airflow -c 'CREATE DATABASE mlflow;' 2>/dev/null || true &&
       mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri postgresql://airflow:airflow@postgres:5432/mlflow --default-artifact-root /mlflow/artifacts"
 
   airflow-init:
@@ -60,6 +60,9 @@ services:
       - airflow_data:/opt/airflow
       - ./dags:/opt/airflow/dags
       - ./scripts:/opt/airflow/scripts
+      - ./utils:/opt/airflow/utils
+      - ./data:/opt/airflow/data
+      - ./datamart:/opt/airflow/datamart
     entrypoint: >
       /bin/bash -c "airflow db init &&
       airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com || true"
@@ -82,6 +85,9 @@ services:
       - airflow_data:/opt/airflow
       - ./dags:/opt/airflow/dags
       - ./scripts:/opt/airflow/scripts
+      - ./utils:/opt/airflow/utils
+      - ./data:/opt/airflow/data
+      - ./datamart:/opt/airflow/datamart
     ports:
       - "8080:8080"
     command: webserver
@@ -104,6 +110,9 @@ services:
       - airflow_data:/opt/airflow
       - ./dags:/opt/airflow/dags
       - ./scripts:/opt/airflow/scripts
+      - ./utils:/opt/airflow/utils
+      - ./data:/opt/airflow/data
+      - ./datamart:/opt/airflow/datamart
     command: scheduler
 
   # Prometheus for metrics collection (optional)
@@ -157,6 +166,7 @@ services:
       - ./dags:/opt/airflow/dags
       - ./data:/opt/airflow/data
       - ./scripts:/opt/airflow/scripts
+      - ./utils:/opt/airflow/utils
       - ./model_bank:/opt/airflow/model_bank
       - ./loan.csv:/opt/airflow/loan.csv
     command: >

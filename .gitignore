@@ -175,7 +175,20 @@ cython_debug/
 
 # mac
 .DS_Store
-# *.parquet/
+*.parquet
 
 # trash
 *.Trash*
+
+# Data pipeline outputs
+datamart/
+data/
+logs/
+
+# Parquet files (already covered by *.parquet above, but being explicit)
+*.parquet
+
+# Airflow specific
+airflow.cfg
+airflow.db
+webserver_config.py

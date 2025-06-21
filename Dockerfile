@@ -9,21 +9,31 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # Install Java (OpenJDK 17 headless), procps (for 'ps') and bash
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends openjdk-17-jdk-headless procps bash && \
+    apt-get install -y --no-install-recommends openjdk-17-jdk-headless procps bash curl && \
     rm -rf /var/lib/apt/lists/* && \
     # Ensure Spark's scripts run with bash instead of dash
-    ln -sf /bin/bash /bin/sh && \
-    # Create expected JAVA_HOME directory and symlink the java binary there
-    mkdir -p /usr/lib/jvm/java-17-openjdk-amd64/bin && \
-    JAVA_PATH="$(which java)" && \
-    if [ ! -e /usr/lib/jvm/java-17-openjdk-amd64/bin/java ]; then \
-        ln -s "$JAVA_PATH" /usr/lib/jvm/java-17-openjdk-amd64/bin/java; \
-    fi
-    # ln -s "$(which java)" /usr/lib/jvm/java-17-openjdk-amd64/bin/java
+    ln -sf /bin/bash /bin/sh
 
-# Set JAVA_HOME to the directory expected by Spark
+# Set JAVA_HOME properly
 ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 ENV PATH=$PATH:$JAVA_HOME/bin
+
+# Set Spark environment variables
+ENV SPARK_HOME=/opt/spark
+ENV PYTHONPATH=$SPARK_HOME/python:$SPARK_HOME/python/lib/py4j-0.10.9.5-src.zip:$PYTHONPATH
+ENV PATH=$PATH:$SPARK_HOME/bin
+
+# Download and install Spark
+RUN curl -O https://archive.apache.org/dist/spark/spark-3.4.1/spark-3.4.1-bin-hadoop3.tgz && \
+    tar -xzf spark-3.4.1-bin-hadoop3.tgz && \
+    mv spark-3.4.1-bin-hadoop3 /opt/spark && \
+    rm spark-3.4.1-bin-hadoop3.tgz
+
+# Create necessary directories
+RUN mkdir -p /opt/spark/logs /opt/spark/work
+
+# Set permissions
+RUN chown -R airflow:root /opt/spark
 
 # Set the working directory
 WORKDIR /app

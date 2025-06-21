@@ -10,9 +10,20 @@ from datetime import datetime, timedelta
 import sys
 import os
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '../scripts/utils'))
-from data_processing_bronze_table import process_bronze_loan_table, process_bronze_clickstream_table, process_bronze_attributes_table, process_bronze_financials_table
-from data_processing_silver_table import process_silver_table
+sys.path.append('/opt/airflow/utils')
+from silver_credit_history import process_credit_history
+from silver_demographic import process_demographic
+from silver_financial import process_financial
+from silver_loan_terms import process_loan_terms
+from gold_credit_history import process_credit_history as process_gold_credit_history
+from gold_demographic import process_demographic as process_gold_demographic
+from gold_financial import process_financial as process_gold_financial
+from gold_loan_terms import process_loan_terms as process_gold_loan_terms
+from process_bronze_tables import process_bronze_table
+from process_silver_tables import process_silver_table
+from process_gold_tables import process_gold_table
+from gold_feature_store import create_feature_store
+from gold_label_store import create_gold_label_store
 
 default_args = {
     'owner': 'airflow',
@@ -134,10 +145,11 @@ def log_retraining_activity(**context):
 with DAG(
     'P2PCreditScore_DataPreprocessing',
     default_args=default_args,
-    description='Daily data preprocessing pipeline for P2P credit scoring',
-    schedule_interval='0 1 * * *',  # Daily at 1 AM
+    description='Weekly data preprocessing pipeline for P2P credit scoring',
+    schedule_interval='0 6 * * 0',  # Weekly on Sundays at 6 AM
     start_date=datetime(2022, 1, 1),
-    catchup=False,
+    end_date=datetime(2024, 12, 31),
+    catchup=True,
     tags=['data', 'preprocessing', 'etl']
 ) as data_preprocessing_dag:
     
@@ -145,131 +157,124 @@ with DAG(
     start_task = DummyOperator(task_id="start_task")
     
     # Source data checks
-    dep_check_source_lms = DummyOperator(task_id="dep_check_source_lms")
-    dep_check_source_attributes = DummyOperator(task_id="dep_check_source_attributes")
-    dep_check_source_financial = DummyOperator(task_id="dep_check_source_financial")
-    dep_check_loan_term = DummyOperator(task_id="dep_check_loan_term")
-
-    # Original source data checks (commented out)
-    # dep_check_source_data_bronze_1 = FileSensor(
-    #     task_id='dep_check_source_lms',
-    #     filepath='/opt/airflow/scripts/data/lms_loan_daily.csv',
-    #     poke_interval=10,
-    #     timeout=600,
-    #     mode='poke'
-    # )
-    # dep_check_source_data_bronze_2 = FileSensor(
-    #     task_id='dep_check_source_attributes',
-    #     filepath='/opt/airflow/scripts/data/features_attributes.csv',
-    #     poke_interval=10,
-    #     timeout=600,
-    #     mode='poke'
-    # )
-    # dep_check_source_data_bronze_3 = FileSensor(
-    #     task_id='dep_check_source_financials',
-    #     filepath='/opt/airflow/scripts/data/features_financials.csv',
-    #     poke_interval=10,
-    #     timeout=600,
-    #     mode='poke'
-    # )
-    # dep_check_source_data_bronze_4 = FileSensor(
-    # task_id='dep_check_source_clickstream',
-    # filepath='/opt/airflow/scripts/data/feature_clickstream.csv',
-    # poke_interval=10,
-    # timeout=600,
-    # mode='poke'
-    # )
+    dep_check_source_credit_history = FileSensor(
+        task_id='dep_check_source_credit_history',
+        filepath='/opt/airflow/data/features_credit_history.csv',
+        poke_interval=10,
+        timeout=600,
+        mode='poke'
+    )
+    
+    dep_check_source_demographic = FileSensor(
+        task_id='dep_check_source_demographic',
+        filepath='/opt/airflow/data/features_demographic.csv',
+        poke_interval=10,
+        timeout=600,
+        mode='poke'
+    )
+    
+    dep_check_source_financial = FileSensor(
+        task_id='dep_check_source_financial',
+        filepath='/opt/airflow/data/features_financial.csv',
+        poke_interval=10,
+        timeout=600,
+        mode='poke'
+    )
+    
+    dep_check_source_loan_terms = FileSensor(
+        task_id='dep_check_source_loan_terms',
+        filepath='/opt/airflow/data/features_loan_terms.csv',
+        poke_interval=10,
+        timeout=600,
+        mode='poke'
+    )
 
     # Bronze layer processing
-    bronze_table_cred_history = DummyOperator(task_id="bronze_table_cred_history")
-    bronze_table_demographic = DummyOperator(task_id="bronze_table_demographic")
-    bronze_table_financial = DummyOperator(task_id="bronze_table_financial")
-    bronze_table_loan_term = DummyOperator(task_id="bronze_table_loan_term")
+    bronze_table_cred_history = PythonOperator(
+        task_id='bronze_table_cred_history',
+        python_callable=process_bronze_table,
+        op_args=['{{ ds }}', '/opt/airflow/datamart/bronze/', None, 'credit_history', 'weekly']
+    )
     
-    # Original bronze table processing (commented out)
-    # bronze_table_1 = PythonOperator(
-    #     task_id='run_bronze_table_lms',
-    #     python_callable=process_bronze_loan_table,
-    #     op_args=['{{ ds }}', '/opt/airflow/scripts/datamart/bronze/lms/']
-    # )
-    # bronze_table_2 = PythonOperator(
-    #     task_id='run_bronze_table_attributes',
-    #     python_callable=process_bronze_attributes_table,
-    #     op_args=['{{ ds }}', '/opt/airflow/scripts/datamart/bronze/attributes/']
-    # )
-    # bronze_table_3 = PythonOperator(
-    #     task_id='run_bronze_table_financials',
-    #     python_callable=process_bronze_financials_table,
-    #     op_args=['{{ ds }}', '/opt/airflow/scripts/datamart/bronze/financials/']
-    # )
-    # bronze_table_4 = PythonOperator(
-    #     task_id='run_bronze_table_clickstream',
-    #     python_callable=process_bronze_clickstream_table,
-    #     op_args=['{{ ds }}', '/opt/airflow/scripts/datamart/bronze/clickstream/']
-    # )
+    bronze_table_demographic = PythonOperator(
+        task_id='bronze_table_demographic',
+        python_callable=process_bronze_table,
+        op_args=['{{ ds }}', '/opt/airflow/datamart/bronze/', None, 'demographic', 'weekly']
+    )
+    
+    bronze_table_financial = PythonOperator(
+        task_id='bronze_table_financial',
+        python_callable=process_bronze_table,
+        op_args=['{{ ds }}', '/opt/airflow/datamart/bronze/', None, 'financial', 'weekly']
+    )
+    
+    bronze_table_loan_term = PythonOperator(
+        task_id='bronze_table_loan_term',
+        python_callable=process_bronze_table,
+        op_args=['{{ ds }}', '/opt/airflow/datamart/bronze/', None, 'loan_terms', 'weekly']
+    )
 
-    # Silver layer processing
-    silver_table_cred_history = DummyOperator(task_id="silver_table_cred_history")
-    silver_table_demographic = DummyOperator(task_id="silver_table_demographic")
-    silver_table_financial = DummyOperator(task_id="silver_table_financial")
-    silver_table_loan_term = DummyOperator(task_id="silver_table_loan_term")
+    # Silver layer processing (each task creates its own Spark session)
+    silver_table_cred_history = PythonOperator(
+        task_id='silver_table_cred_history',
+        python_callable=process_silver_table,
+        op_args=['{{ ds }}', '/opt/airflow/datamart/bronze/', '/opt/airflow/datamart/silver/', 'credit_history', None]
+    )
+    
+    silver_table_demographic = PythonOperator(
+        task_id='silver_table_demographic',
+        python_callable=process_silver_table,
+        op_args=['{{ ds }}', '/opt/airflow/datamart/bronze/', '/opt/airflow/datamart/silver/', 'demographic', None]
+    )
+    
+    silver_table_financial = PythonOperator(
+        task_id='silver_table_financial',
+        python_callable=process_silver_table,
+        op_args=['{{ ds }}', '/opt/airflow/datamart/bronze/', '/opt/airflow/datamart/silver/', 'financial', None]
+    )
+    
+    silver_table_loan_term = PythonOperator(
+        task_id='silver_table_loan_term',
+        python_callable=process_silver_table,
+        op_args=['{{ ds }}', '/opt/airflow/datamart/bronze/', '/opt/airflow/datamart/silver/', 'loan_terms', None]
+    )
 
-    # Original silver table processing (commented out)
-    # silver_table_1 = PythonOperator(
-    #     task_id = 'run_silver_table_lms',
-    #     python_callable = process_silver_table,
-    #     op_args = ['lms', '/opt/airflow/scripts/datamart/bronze/', '/opt/airflow/scripts/datamart/silver/', '{{ ds }}']
-    # )
-    # silver_table_2 = PythonOperator(
-    #     task_id = 'run_silver_table_attributes',
-    #     python_callable = process_silver_table,
-    #     op_args = ['attributes', '/opt/airflow/scripts/datamart/bronze/', '/opt/airflow/scripts/datamart/silver/', '{{ ds }}']
-    # )
-    # silver_table_3 = PythonOperator(
-    #     task_id = 'run_silver_table_financials',
-    #     python_callable = process_silver_table,
-    #     op_args = ['financials', '/opt/airflow/scripts/datamart/bronze/', '/opt/airflow/scripts/datamart/silver/', '{{ ds }}']
-    # )
-    # silver_table_4 = PythonOperator(
-    #     task_id = 'run_silver_table_clickstream',
-    #     python_callable = process_silver_table,
-    #     op_args = ['clickstream', '/opt/airflow/scripts/datamart/bronze/', '/opt/airflow/scripts/datamart/silver/', '{{ ds }}']
-    # )
-
-    # Gold layer processing
-    gold_feature_store = DummyOperator(task_id="gold_feature_store")
-    gold_label_store = DummyOperator(task_id="gold_label_store")
-
-    # Original gold layer processing (commented out)
-    # gold_feature_store = PythonOperator(
-    #     task_id='run_gold_feature_store',
-    #     python_callable=process_gold_feature_store,
-    #     op_args=['{{ ds }}', '/opt/airflow/scripts/datamart/silver/', '/opt/airflow/scripts/datamart/gold/']
-    # )
-    # gold_label_store = PythonOperator(
-    #     task_id='run_gold_label_store',
-    #     python_callable=process_gold_label_store,
-    #     op_args=['{{ ds }}', '/opt/airflow/scripts/datamart/silver/', '/opt/airflow/scripts/datamart/gold/']
-    # )
+    # Gold layer processing (each task creates its own Spark session)
+    gold_feature_store = PythonOperator(
+        task_id='gold_feature_store',
+        python_callable=create_feature_store,
+        op_args=['/opt/airflow/datamart/silver/', '/opt/airflow/datamart/gold/', '{{ ds }}']
+    )
+    
+    gold_label_store = PythonOperator(
+        task_id='gold_label_store',
+        python_callable=create_gold_label_store,
+        op_args=['/opt/airflow/datamart/silver/', '/opt/airflow/datamart/gold/', '{{ ds }}']
+    )
 
     # End task
     end_task = DummyOperator(task_id="end_task")
 
     # Define task dependencies
-    start_task >> [dep_check_source_lms, dep_check_source_attributes, dep_check_source_financial, dep_check_loan_term]
+    start_task >> [dep_check_source_credit_history, dep_check_source_demographic, dep_check_source_financial, dep_check_source_loan_terms]
     
-    dep_check_source_lms >> bronze_table_cred_history
-    dep_check_source_attributes >> bronze_table_demographic
+    dep_check_source_credit_history >> bronze_table_cred_history
+    dep_check_source_demographic >> bronze_table_demographic
     dep_check_source_financial >> bronze_table_financial
-    dep_check_loan_term >> bronze_table_loan_term
+    dep_check_source_loan_terms >> bronze_table_loan_term
     
-    [bronze_table_cred_history, bronze_table_demographic, bronze_table_financial, bronze_table_loan_term] >> silver_table_cred_history
-    [bronze_table_cred_history, bronze_table_demographic, bronze_table_financial, bronze_table_loan_term] >> silver_table_demographic
-    [bronze_table_cred_history, bronze_table_demographic, bronze_table_financial, bronze_table_loan_term] >> silver_table_financial
-    [bronze_table_cred_history, bronze_table_demographic, bronze_table_financial, bronze_table_loan_term] >> silver_table_loan_term
+    # Silver processing after bronze processing
+    bronze_table_cred_history >> silver_table_cred_history
+    bronze_table_demographic >> silver_table_demographic
+    bronze_table_financial >> silver_table_financial
+    bronze_table_loan_term >> silver_table_loan_term
     
-    [silver_table_cred_history, silver_table_demographic, silver_table_financial, silver_table_loan_term] >> gold_feature_store
-    [silver_table_cred_history, silver_table_demographic, silver_table_financial, silver_table_loan_term] >> gold_label_store
+    # Gold processing after silver processing
+    silver_table_cred_history >> gold_feature_store
+    silver_table_demographic >> gold_feature_store
+    silver_table_financial >> gold_feature_store
+    silver_table_loan_term >> gold_feature_store
+    silver_table_loan_term >> gold_label_store
     
     [gold_feature_store, gold_label_store] >> end_task
 
@@ -277,9 +282,10 @@ with DAG(
 with DAG(
     'P2PCreditScore_ModelTrainingInference',
     default_args=default_args,
-    description='Daily model training and inference pipeline',
-    schedule_interval='0 2 * * *',  # Daily at 2 AM
+    description='Weekly model training and inference pipeline',
+    schedule_interval='0 8 * * 0',  # Weekly on Sundays at 8 AM (after data preprocessing)
     start_date=datetime(2022, 1, 1),
+    end_date=datetime(2024, 12, 31),
     catchup=False,
     tags=['ml', 'training', 'inference']
 ) as ml_inference_dag:
@@ -386,6 +392,7 @@ with DAG(
     description='Weekly model monitoring and performance tracking',
     schedule_interval='0 6 * * 0',  # Weekly on Sundays at 6 AM
     start_date=datetime(2022, 1, 1),
+    end_date=datetime(2024, 12, 31),
     catchup=False,
     tags=['ml', 'monitoring', 'performance']
 ) as ml_monitoring_dag:
