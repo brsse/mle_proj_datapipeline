@@ -281,7 +281,7 @@ def loan_terms_processing(df, spark):
         df = df.drop(col_name, f"{col_name}_idx", f"{col_name}_ohe", arr_col)
     
     # Keep grade column for filtering, drop other unnecessary columns
-    df = df.drop("issue_d", "id", "sub_grade", "term", "loan_status", "pymnt_plan", "purpose", "initial_list_status", "disbursement_method", "debt_settlement_flag")
+    df = df.drop("issue_d", "sub_grade", "term", "loan_status", "pymnt_plan", "purpose", "initial_list_status", "disbursement_method", "debt_settlement_flag")
 
     return df
 
@@ -320,9 +320,14 @@ def create_feature_store(
 
     # === Join all on member_id and snapshot_date ===
     logging.info("Joining all dataframes on member_id and snapshot_date")
-    df = loan_df.join(demo_df, ["member_id", "snapshot_date"], "outer") \
-                .join(fin_df, ["member_id", "snapshot_date"], "outer") \
-                .join(credit_df, ["member_id", "snapshot_date"], "outer")
+    # Start with loan_df and use left joins to ensure we only include members with loan terms (and grades)
+    # but allow missing data in other tables
+    df = loan_df.join(demo_df, ["member_id", "snapshot_date"], "left") \
+                .join(fin_df, ["member_id", "snapshot_date"], "left") \
+                .join(credit_df, ["member_id", "snapshot_date"], "left")
+
+    # Drop duplicates that may have been introduced by the joins
+    df = df.distinct()
     
     # === Apply same filtering as label store for consistency ===
     logging.info("Applying grade filter to ensure consistency with label store")
