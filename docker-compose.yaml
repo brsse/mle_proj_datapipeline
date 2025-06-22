@@ -8,10 +8,27 @@ services:
       - POSTGRES_DB=airflow
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
     ports:
       - "5432:5432"
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      retries: 5
+
+  # PostgreSQL Database for MLflow (separate to avoid conflicts)
+  postgres-mlflow:
+    image: postgres:13
+    environment:
+      - POSTGRES_USER=mlflow
+      - POSTGRES_PASSWORD=mlflow
+      - POSTGRES_DB=mlflow
+    volumes:
+      - postgres_mlflow_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "mlflow"]
       interval: 10s
       retries: 5
 
@@ -29,20 +46,29 @@ services:
   mlflow:
     image: python:3.9-slim
     depends_on:
-      postgres:
+      postgres-mlflow:
         condition: service_healthy
     environment:
       - MLFLOW_TRACKING_URI=http://mlflow:5000
-      - MLFLOW_DEFAULT_ARTIFACT_ROOT=/mlflow/artifacts
+      - MLFLOW_DEFAULT_ARTIFACT_ROOT=/tmp/mlflow/artifacts
+      - GIT_PYTHON_REFRESH=quiet
     volumes:
-      - mlflow_data:/mlflow
+      - mlflow_data:/tmp/mlflow
       - ./scripts:/opt/airflow/scripts
     ports:
       - "5000:5000"
     command: >
-      bash -c "pip install mlflow psycopg2-binary &&
-      psql -h postgres -U airflow -d airflow -c 'CREATE DATABASE mlflow;' 2>/dev/null || true &&
-      mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri postgresql://airflow:airflow@postgres:5432/mlflow --default-artifact-root /mlflow/artifacts"
+      bash -c "apt-get update && apt-get install -y curl &&
+      pip install mlflow psycopg2-binary &&
+      mkdir -p /tmp/mlflow/artifacts &&
+      chmod -R 777 /tmp/mlflow &&
+      mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri postgresql://mlflow:mlflow@postgres-mlflow:5432/mlflow --default-artifact-root /tmp/mlflow/artifacts"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   airflow-init:
     build: .
@@ -74,6 +100,8 @@ services:
         condition: service_completed_successfully
       postgres:
         condition: service_healthy
+      mlflow:
+        condition: service_healthy
     environment:
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
       - AIRFLOW__CORE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
@@ -92,6 +120,8 @@ services:
     ports:
       - "8080:8080"
     command: webserver
+    links:
+      - "mlflow"
 
   airflow-scheduler:
     build: .
@@ -99,6 +129,8 @@ services:
       airflow-init:
         condition: service_completed_successfully
       postgres:
+        condition: service_healthy
+      mlflow:
         condition: service_healthy
     environment:
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
@@ -116,6 +148,8 @@ services:
       - ./data:/opt/airflow/data
       - ./datamart:/opt/airflow/datamart
     command: scheduler
+    links:
+      - "mlflow"
 
   # Prometheus for metrics collection (optional)
   prometheus:
@@ -168,10 +202,16 @@ services:
       - .:/opt/airflow
     command: >
       bash -c "jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root --NotebookApp.token='' --notebook-dir=/opt/airflow"
+    depends_on:
+      mlflow:
+        condition: service_healthy
+    links:
+      - "mlflow"
 
 volumes:
   airflow_data:
   postgres_data:
+  postgres_mlflow_data:
   mlflow_data:
   prometheus_data:
   grafana_data:

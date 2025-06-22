@@ -7,9 +7,9 @@ USER root
 # Set non-interactive mode for apt-get
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install Java (OpenJDK 17 headless), procps (for 'ps') and bash
+# Install Java (OpenJDK 17 headless), procps (for 'ps'), bash, and libgomp1 for LightGBM
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends openjdk-17-jdk-headless procps bash curl && \
+    apt-get install -y --no-install-recommends openjdk-17-jdk-headless procps bash curl libgomp1 && \
     rm -rf /var/lib/apt/lists/* && \
     # Ensure Spark's scripts run with bash instead of dash
     ln -sf /bin/bash /bin/sh
