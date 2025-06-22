@@ -80,6 +80,7 @@ services:
       - AIRFLOW__CORE__FERNET_KEY=PAqBeGJLJTYFzVkOGHWIYXdLO7XdXz5yTdxAGJe9ezM=
       - AIRFLOW__CORE__LOAD_EXAMPLES=False
       - AIRFLOW__METRICS__STATSD_ON=False
+      - AIRFLOW__CORE__DAGBAG_IMPORT_TIMEOUT=60
       - MLFLOW_TRACKING_URI=http://mlflow:5000
     volumes:
       - airflow_data:/opt/airflow
@@ -105,6 +106,7 @@ services:
       - AIRFLOW__CORE__FERNET_KEY=PAqBeGJLJTYFzVkOGHWIYXdLO7XdXz5yTdxAGJe9ezM=
       - AIRFLOW__CORE__LOAD_EXAMPLES=False
       - AIRFLOW__METRICS__STATSD_ON=False
+      - AIRFLOW__CORE__DAGBAG_IMPORT_TIMEOUT=60
       - MLFLOW_TRACKING_URI=http://mlflow:5000
     volumes:
       - airflow_data:/opt/airflow
@@ -163,12 +165,7 @@ services:
     environment:
       - MLFLOW_TRACKING_URI=http://mlflow:5000
     volumes:
-      - ./dags:/opt/airflow/dags
-      - ./data:/opt/airflow/data
-      - ./scripts:/opt/airflow/scripts
-      - ./utils:/opt/airflow/utils
-      - ./model_bank:/opt/airflow/model_bank
-      - ./loan.csv:/opt/airflow/loan.csv
+      - .:/opt/airflow
     command: >
       bash -c "jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root --NotebookApp.token='' --notebook-dir=/opt/airflow"
 

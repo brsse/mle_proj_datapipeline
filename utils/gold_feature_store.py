@@ -280,7 +280,8 @@ def loan_terms_processing(df, spark):
         # drop intermediate columns
         df = df.drop(col_name, f"{col_name}_idx", f"{col_name}_ohe", arr_col)
     
-    df = df.drop("issue_d", "id", "grade", "sub_grade", "term", "loan_status", "pymnt_plan", "purpose", "initial_list_status", "disbursement_method", "debt_settlement_flag")
+    # Keep grade column for filtering, drop other unnecessary columns
+    df = df.drop("issue_d", "id", "sub_grade", "term", "loan_status", "pymnt_plan", "purpose", "initial_list_status", "disbursement_method", "debt_settlement_flag")
 
     return df
 
@@ -323,7 +324,12 @@ def create_feature_store(
                 .join(fin_df, ["member_id", "snapshot_date"], "outer") \
                 .join(credit_df, ["member_id", "snapshot_date"], "outer")
     
-    df = df.drop("member_id", "snapshot_date")
+    # === Apply same filtering as label store for consistency ===
+    logging.info("Applying grade filter to ensure consistency with label store")
+    df = df.filter("grade IS NOT NULL")
+    
+    # Drop grade column after filtering, along with member_id and snapshot_date
+    df = df.drop("member_id", "snapshot_date", "grade")
     print(df.columns)
     
     # === Write Feature Store to Parquet ===
