@@ -1,0 +1,28 @@
+{
+  "model_type": "LightGBM",
+  "macro_f1_score": 0.912181439760763,
+  "best_params": {
+    "objective": "multiclass",
+    "num_class": 7,
+    "max_depth": 4,
+    "learning_rate": 0.1,
+    "n_estimators": 150,
+    "num_leaves": 20,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "random_state": 42,
+    "verbose": -1
+  },
+  "grade_mapping": {
+    "A": 0,
+    "B": 1,
+    "C": 2,
+    "D": 3,
+    "E": 4,
+    "F": 5,
+    "G": 6
+  },
+  "training_timestamp": "2025-06-23T08:17:44.923823",
+  "training_samples": 577272,
+  "test_samples": 144319
+}

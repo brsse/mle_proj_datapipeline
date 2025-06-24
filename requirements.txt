@@ -6,6 +6,8 @@ scipy
 scikit-learn
 pyspark
 xgboost
+lightgbm
+catboost
 jupyterlab
 apache-airflow==2.8.1
 
