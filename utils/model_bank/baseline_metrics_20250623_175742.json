@@ -1,0 +1,31 @@
+{
+  "model_type": "CatBoost",
+  "macro_f1_score": 0.8433461904079148,
+  "best_params": {
+    "objective": "MultiClass",
+    "loss_function": "MultiClass",
+    "eval_metric": "MultiClass",
+    "iterations": 100,
+    "learning_rate": 0.1,
+    "depth": 6,
+    "l2_leaf_reg": 3,
+    "bootstrap_type": "Bernoulli",
+    "subsample": 0.8,
+    "colsample_bylevel": 0.8,
+    "random_seed": 42,
+    "verbose": 0,
+    "task_type": "CPU"
+  },
+  "grade_mapping": {
+    "A": 0,
+    "B": 1,
+    "C": 2,
+    "D": 3,
+    "E": 4,
+    "F": 5,
+    "G": 6
+  },
+  "training_timestamp": "2025-06-23T17:57:42.923684",
+  "training_samples": 577542,
+  "test_samples": 144386
+}
